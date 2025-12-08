@@ -670,8 +670,7 @@ function gunique(X; return_unique::Val{CompUnique}=Val(true),
         CompInv && (inverse_indices = similar(X, Int))
         CompUnique && (unique_values = empty(X))
         CompCounts && (counts = Int[]; sizehint!(counts, length(X)))
-        seen = Dict{eltype(X),Int}()
-        sizehint!(seen, length(X))
+        seen = Dict{eltype(X),Int}(); sizehint!(seen, length(X))
 
         nunique = 0
         for (i, x) in enumerate(X)
@@ -2276,13 +2275,19 @@ For instance nodes 2 and 5 in a list of 6 vertices is the same then
 `indMap = [1,2,3,4,2,5]`. Such that if F was `F=[[1,2,3],[4,5,6]]` it is mapped
 to be: `F=[[1,2,3],[4,2,5]]`. 
 """
-function indexmap!(F,indMap::Union{Vector{T},AbstractRange{T}}) where T<:Integer
+function indexmap!(F,indMap::Union{Vector{T}, AbstractRange{T}}) where T<:Integer
     @inbounds for (i,f) in enumerate(F)
         F[i] = indMap[f] 
     end        
 end
 
-function indexmap(F,indMap::Union{Vector{T},AbstractRange{T}}) where T<:Integer
+function indexmap!(F,indMap::Dict{T,T}) where T<:Integer
+    @inbounds for (i,f) in enumerate(F)
+        F[i] = [indMap[i] for i in f]
+    end        
+end
+
+function indexmap(F,indMap::Union{Vector{T}, AbstractRange{T}, Dict{T,T}}) where T<:Integer
     FF = deepcopy(F)    
     indexmap!(FF,indMap)
     return FF    
@@ -2334,6 +2339,9 @@ function smoothmesh_laplacian(F::Vector{NgonFace{N,TF}},V::Vector{Point{ND,TV}},
             return V
         elseif n>0
             indSmooth = elements2indices(F) # Indices of points involved in smoothing
+            if !isnothing(constrained_points)
+                setdiff!(indSmooth, constrained_points)
+            end
 
             if maximum(indSmooth)>length(V) || minimum(indSmooth)<1
                 throw(ErrorException("Out of range indices detected"))
@@ -2348,11 +2356,8 @@ function smoothmesh_laplacian(F::Vector{NgonFace{N,TF}},V::Vector{Point{ND,TV}},
             while c<n             
                 Vs = deepcopy(V)
                 @inbounds for i in indSmooth 
-                    Vs[i] = (1.0-λ).*Vs[i] .+ λ*mean(V[con_V2V[i]]) # Linear blend between original and pure Laplacian
-                end
-                if !isnothing(constrained_points)
-                    Vs[constrained_points] = V[constrained_points] # Put back constrained points
-                end
+                    Vs[i] = (1.0-λ).*V[i] .+ λ*mean(V[con_V2V[i]]) # Linear blend between original and pure Laplacian
+                end            
                 if !isnothing(tolDist) # Include tolerance based termination
                     d = 0.0
                     @inbounds for i in indSmooth
@@ -2405,6 +2410,10 @@ function smoothmesh_hc(F::Vector{NgonFace{N,TF}},V::Vector{Point{ND,TV}}, n=1, �
         if maximum(indSmooth)>length(V) || minimum(indSmooth)<1
             throw(ErrorException("Out of range indices detected"))
         end
+
+        # if !isnothing(constrained_points)
+        #     setdiff!(indSmooth, constrained_points)
+        # end
 
         # Compute vertex-vertex connectivity i.e. "Laplacian umbrellas" if nothing
         if isnothing(con_V2V)
@@ -3804,54 +3813,62 @@ When `triSide=0` both inward and outward intersections are considered.
 # References 
 1. [Möller, Tomas; Trumbore, Ben (1997). _Fast, Minimum Storage Ray-Triangle Intersection_. Journal of Graphics Tools. 2: 21-28. doi: 10.1080/10867651.1997.10487468.](https://doi.org/10.1080/10867651.1997.10487468)
 """
-function ray_triangle_intersect(F::Vector{TriangleFace{TF}},V::Vector{Point{ND,TV1}},ray_origin::Union{Point{ND,TV2},Vec{ND,TV2}},ray_vector::Union{Point{ND,TV3},Vec{ND,TV3}}; rayType = :ray, triSide = 1, tolEps = eps(Float64)) where TF <: Integer where ND where TV1<:Real where TV2<:Real where TV3<:Real
-    P = Vector{Point{ND,TV1}}()
-    indIntersect = Vector{Int}()
+function ray_triangle_intersect(F::Vector{TriangleFace{TF}}, V::Vector{Point{ND,TV1}}, ray_origin::Union{Point{ND,TV2},Vec{ND,TV2}}, ray_vector::Union{Point{ND,TV3},Vec{ND,TV3}}; rayType = :ray, triSide = 1, tolEps = eps(Float64)) where TF <: Integer where ND where TV1<:Real where TV2<:Real where TV3<:Real
+    P = Vector{Point{ND,TV1}}(); sizehint!(P, length(F))
+    indIntersect = Vector{Int}(); sizehint!(indIntersect, length(F))
+    T = Vector{TV1}(); sizehint!(T, length(F))
+    det_vals = Vector{TV1}(); sizehint!(det_vals, length(F))
     for (i,f) in enumerate(F)
-        p = ray_triangle_intersect(f,V,ray_origin,ray_vector; rayType = rayType, triSide = triSide, tolEps = tolEps)        
-        if !isnan(p[1])
-            push!(P,p)
-            push!(indIntersect,i)
+        p, t, det_val = ray_triangle_intersect(f,V,ray_origin,ray_vector; rayType = rayType, triSide = triSide, tolEps = tolEps)        
+        if !isnan(p[1])            
+            push!(P, p)
+            push!(indIntersect, i)
+            push!(T, t)
+            push!(det_vals, det_val)
         end
     end
-    return P,indIntersect
+    return P, indIntersect, T, det_vals
 end
 
-function ray_triangle_intersect(f::TriangleFace{Int},V::Vector{Point{ND,TV1}},ray_origin::Union{Point{ND,TV2},Vec{ND,TV2}},ray_vector::Union{Point{ND,TV3},Vec{ND,TV3}}; rayType = :ray, triSide = 1, tolEps = eps(Float64)) where ND where TV1<:Real where TV2<:Real where TV3<:Real
+function ray_triangle_intersect(f::TriangleFace{Int}, V::Vector{Point{ND,TV1}}, ray_origin::Union{Point{ND,TV2},Vec{ND,TV2}}, ray_vector::Union{Point{ND,TV3},Vec{ND,TV3}}; rayType = :ray, triSide = 1, tolEps = eps(Float64)) where ND where TV1<:Real where TV2<:Real where TV3<:Real
+    if rayType == :ray
+        ray_vector = normalizevector(ray_vector)
+    end
 
     # Edge vectors
     P1 = V[f[1]] # First corner point
     vec_edge_1 = V[f[2]].-P1 # Edge vector 1-2
     vec_edge_2 = V[f[3]].-P1 # Edge vector 1-3
 
-    # Determine if ray/lines is capable of intersecting based on direction
+    # Determine if ray/line is capable of intersecting based on direction
     ray_cross_e2 = cross(ray_vector,vec_edge_2) 
-    det_vec = dot(vec_edge_1,ray_cross_e2)  # Determinant det([-n' P21' P31'])
+    det_val = dot(vec_edge_1,ray_cross_e2)  # Determinant det([-n' P21' P31'])    
     if triSide == 1 # Pointing at face normals
-        boolDet = det_vec>tolEps
+        boolDet = det_val > tolEps
     elseif triSide == 0 # Both ways
-        boolDet = abs(det_vec)>tolEps
+        boolDet = abs(det_val) > tolEps
     elseif triSide == -1 # Pointing along face normals
-        boolDet = det_vec<tolEps
+        boolDet = det_val < -tolEps
     end
 
     p = Point{ND,TV1}(NaN,NaN,NaN)
+    t = TV1(NaN)
     if boolDet        
         s = ray_origin.-P1
-        u = dot(s,ray_cross_e2)/det_vec    
+        u = dot(s,ray_cross_e2)/det_val    
         if u >= 0 && u <= 1 # On triangle according to u            
             s_cross_e1 = cross(s,vec_edge_1)
-            v = dot(ray_vector,s_cross_e1)/det_vec
+            v = dot(ray_vector,s_cross_e1)/det_val
             if v >= 0 && (u+v) <= 1 # On triangle according to both u and v
                 # Along ray/line coordinates i.e. intersection is at ray_origin + t.*ray_vector 
-                t = dot(vec_edge_2,s_cross_e1)/det_vec                      
+                t = dot(vec_edge_2,s_cross_e1)/det_val                      
                 if rayType == :ray || (rayType == :line && t>=0 && t<=1.0)                                                   
-                    p = ray_origin .+ t.*ray_vector # same as: push!(P, P1 .+ u.*P21 .+ v.*P31)            
+                    p = ray_origin .+ t.*ray_vector # same as: P1 .+ u.*P21 .+ v.*P31
                 end
             end
         end    
     end    
-    return p 
+    return p, t, det_val
 end
 
 """
@@ -7501,7 +7518,7 @@ function faceinteriorpoint(F,V, indFace; w=0.5, triSide = -1)
     end
 
     ray_origin = mean(V[F[indFace]])
-    P,_ = ray_triangle_intersect(F, V, ray_origin, ray_vector; rayType = :ray, triSide = triSide)    
+    P,_,_,_ = ray_triangle_intersect(F, V, ray_origin, ray_vector; rayType = :ray, triSide = triSide)    
     if isempty(P)
         throw(ErrorException("Insufficient ray intersection points (surface may not be closed)"))
     else
@@ -9440,4 +9457,208 @@ function polarDecomposition(F)
     U = Q'*F # R*diagm(Σ)*R' # Right stretch tensor
     V = F*Q' # Left stretch tensor
     return U, V, Q, W, Σ, R
+end
+
+"""
+    image2voxelmesh(I::Array{TM, 3}, B::Array{Bool, 3}; meshType=:elements, voxelSize=(1.0, 1.0, 1.0), origin=Point{3,Float64}(0.0, 0.0, 0.0)) where TM <:Real
+    image2voxelmesh(I::Array{TM, 3}, C::Vector{CartesianIndex{3}}; meshType=:elements, voxelSize=(1.0, 1.0, 1.0), origin=Point{3,Float64}(0.0, 0.0, 0.0)) where TM <:Real
+
+Creates voxel mesh from image
+
+# Description
+This function generates a voxel mesh for the image defined by the 3D array `I` 
+for the voxels defined by either a 3D Bool array `B` or a Cartesian index vector
+`C`. The output consists of the simplices (hexahedral elements or quadrilateral 
+faces) `M`, the vertices `V`, and the mesh element image intensities `I`. 
+The voxel mesh size depends on the input `voxelSize` 
+(default `(1.0, 1.0, 1.0)`), and the centre of the first voxel is positioned at 
+a point defined by `origin` (default is `Point{3,Float64}(0.0, 0.0, 0.0)`). 
+Finally, the mesh type is controlled by `meshType` (default is `:elements`) and
+users can choose the following: 
+`:elements`, this will generate hexahedral elements 
+`:faces`, this will generate quadrilateral faces for all elements 
+`:boundaryfaces`, this will generate only the boundary quadrilateral faces. 
+"""
+function image2voxelmesh(I::Array{TM, 3}, B::Array{Bool, 3}; meshType=:elements, voxelSize=(1.0, 1.0, 1.0), origin=Point{3,Float64}(0.0, 0.0, 0.0)) where TM <:Real
+    C = findall(B) # Cartesian indices for voxels of interest
+    
+    return image2voxelmesh(I, C; meshType=meshType, voxelSize=voxelSize, origin=origin)
+end
+
+function image2voxelmesh(I::Array{TM, 3}, C::Vector{CartesianIndex{3}}; meshType=:elements, voxelSize=(1.0, 1.0, 1.0), origin=Point{3,Float64}(0.0, 0.0, 0.0)) where TM <:Real
+    if !in(meshType,(:elements, :faces,:boundaryfaces))
+        throw(ArgumentError("Invalid meshType $meshType, valid options are: :elements, :faces,:boundaryfaces"))
+    end
+    if isempty(C)
+        if meshType == :elements 
+            M = Vector{Hex8{Int}}()
+        else
+            M = Vector{QuadFace{Int}}()
+        end
+        return M, Vector{Point{3, Float64}}(), Vector{TM}()
+    else
+        
+
+        M = Vector{Hex8{Int}}(undef,length(C)) # Element vector
+        sV = size(I).+1 # Matrix size for coordinate grid
+        for (i,c) in enumerate(C)    
+            M[i] = Hex8{Int}(LinearIndices(sV)[  c[1],   c[2], c[3]+1], 
+                            LinearIndices(sV)[c[1]+1,   c[2], c[3]+1], 
+                            LinearIndices(sV)[c[1]+1, c[2]+1, c[3]+1], 
+                            LinearIndices(sV)[  c[1], c[2]+1, c[3]+1],
+                            LinearIndices(sV)[  c[1],   c[2],   c[3]], 
+                            LinearIndices(sV)[c[1]+1,   c[2],   c[3]], 
+                            LinearIndices(sV)[c[1]+1, c[2]+1,   c[3]], 
+                            LinearIndices(sV)[  c[1], c[2]+1,   c[3]]
+                            )
+        end
+
+        if meshType == :elements
+            M_I = I[C]
+        else #in(meshType,(:faces,:boundaryfaces))
+            # All quad faces 
+            M = element2faces(M) # Get hex element quad faces
+            M_I = repeat(I[C], inner=6)
+            if meshType == :boundaryfaces
+                indBoundaryFaces = boundaryfaceindices(M)
+                M = M[indBoundaryFaces]
+                M_I = M_I[indBoundaryFaces]
+            end
+        end
+
+        # Create coordinate vector 
+        indUsed = unique(reduce(vcat, M)) # Indices of points used in element set
+        V = fill(origin, length(indUsed)) #Vector{Point{3,Float64}}(undef, length(indUsed))
+        dictFix = Dict{Int, Int}(); sizehint!(dictFix, length(indUsed)) # Dict for mapping over indices from full to selection    
+        for (i, i_uni) in enumerate(indUsed)    
+            dictFix[i_uni] = i # i_uni -> i
+            c = CartesianIndices(sV)[i_uni] # Cartesian index of current point in matrix point grid    
+            V[i] += Point{3, Float64}((c[2]-1.5)*voxelSize[2], (c[1]-1.5)*voxelSize[1], (c[3]-1.5)*voxelSize[3])    
+        end
+        indexmap!(M, dictFix) # Map indiced in E from "full" to subset 
+        return M, V, M_I
+    end
+end
+
+
+function smoothmesh_taubin(F::Vector{NgonFace{N,TF}}, V::Vector{Point{ND,TV}}, n=1, λ=0.631398, μ=-0.673952, con_V2V=nothing, constrained_points=nothing) where N where TF<:Integer where ND where TV<:Real
+    if λ>1.0 || λ<0.0
+        throw(ArgumentError("λ should be in the range 0-1"))
+    end
+    
+    if λ>0.0
+        if n==0
+            return V
+        elseif n>0
+            indSmooth = elements2indices(F) # Indices of points involved in smoothing
+
+            if maximum(indSmooth)>length(V) || minimum(indSmooth)<1
+                throw(ErrorException("Out of range indices detected"))
+            end
+            
+            # Compute vertex-vertex connectivity i.e. "Laplacian umbrellas" if nothing
+            if isnothing(con_V2V)
+                E_uni = meshedges(F;unique_only=true)
+                con_V2V = con_vertex_vertex(E_uni)
+            end        
+            c = 0
+            while c<n     
+                # Gaussian step        
+                Vg = deepcopy(V)
+                @inbounds for i in indSmooth 
+                    vm = mean(V[con_V2V[i]])                    
+                    Vg[i] = V[i] + λ.*(vm-V[i])                                        
+                end
+
+                Vs = deepcopy(Vg)
+                @inbounds for i in indSmooth 
+                    vm = mean(Vg[con_V2V[i]])                                        
+                    Vs[i] = Vg[i] + μ.*(vm-Vg[i])
+                end
+
+                if !isnothing(constrained_points)
+                    Vs[constrained_points] = V[constrained_points] # Put back constrained points
+                end     
+                c+=1 
+                V = Vs                
+            end            
+        else #n<0
+            throw(ArgumentError("n should be greater or equal to 0"))
+        end
+    end
+    return V
+end
+
+
+function inmesh(F, V::Vector{Point{3, TV}}, p::Point{3, Tp}; tolEps = eps(Float64), include_on=false) where TV<:Real where Tp <: Real        
+    P, _, T, D = ray_triangle_intersect(F, V, p, Point{3, Float64}(0.0, 0.0, 1.0); rayType = :ray, triSide = 0, tolEps = tolEps)        
+    P_uni, indUni = mergevertices(P; pointSpacing=pointspacingmean(F, V)) # Get unique point indices 
+    T_uni = T[indUni]
+    D_uni = D[indUni]
+    
+    if include_on && any(abs.(T_uni).< tolEps) # Point is on a face
+        return true
+    elseif any(abs.(T_uni).< tolEps) # Point is on a face 
+        return false
+    else
+        if length(P_uni)<2 || all(T_uni .< -tolEps) || all(T_uni .> tolEps) # Nothing or just 1, or all in front or all behind
+            return false    
+        else # More than 1 intersection and some in front and some behind            
+            indSort = sortperm(T_uni)
+            T_uni = T_uni[indSort]
+            D_uni = D_uni[indSort]        
+            indFront = findfirst(>(0.0), T_uni) # First intersection ahead of origin            
+            indBack = indFront-1
+            if (D_uni[indFront] < -tolEps) && (D_uni[indBack] > tolEps)
+                return true
+            else
+                return false
+            end            
+        end
+    end
+end
+
+function inmesh(F, V::Vector{Point{3, TV}}, P::Vector{Point{3, Tp}}; tolEps = eps(Float64), include_on=false) where TV<:Real where Tp <: Real
+    B = Vector{Bool}(undef,length(P))
+    for (i,p) in enumerate(P)
+        B[i] = inmesh(F, V, p; tolEps=tolEps, include_on=include_on)
+    end
+    return B
+end
+
+function mesh2bool(F, V, xr, yr, zr; tolEps = eps(Float64))
+    B = fill(false, length(yr), length(xr), length(zr)) #Array{Bool, 3}(undef, length(yr), length(xr), length(zr))
+    z1 = zr[1]
+    dz = zr[2]-z1
+    for (i,y) in enumerate(yr)
+        for (j,x) in enumerate(xr)        
+            P, _, T, D = ray_triangle_intersect(F, V, Point{3,Float64}(x,y,z1), Point{3, Float64}(0.0, 0.0, 1.0); rayType = :ray, triSide = 0, tolEps = tolEps)                
+            P_uni, indUni = mergevertices(P; pointSpacing=dz) # Get unique point indices 
+            if length(P_uni)>1
+                T_uni = T[indUni]
+                D_uni = D[indUni]
+                indSort = sortperm(T_uni)
+                T_uni = T_uni[indSort]
+                D_uni = D_uni[indSort]        
+                i_T = 1 .+ floor.(Int, T_uni./dz)
+                indCheck = findall(i_T.>=1.0 .&& i_T.<=length(zr))                                
+                if !isempty(indCheck)
+                    i_T = i_T[indCheck]
+                    D_i = D_uni[indCheck]            
+                    for s in 1:length(i_T)-1
+                        if D_i[s]>tolEps && D_i[s+1]<-tolEps                    
+                            B[i,j,i_T[s]+1:i_T[s+1]] .= true
+                        end
+                    end 
+                    if D_i[1]<-tolEps
+                        B[i,j,1:i_T[1]] .= true
+                    end
+                    if D_i[end]>tolEps
+                        B[i,j,i_T[end]+1:end] .= true
+                    end          
+                end
+            end
+        end
+    end
+    return B
 end

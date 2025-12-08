@@ -60,5 +60,4 @@ for testCase = 1:4
 
     screen = display(GLMakie.Screen(), fig)
     GLMakie.set_title!(screen, "testCase = $testCase")
-
 end

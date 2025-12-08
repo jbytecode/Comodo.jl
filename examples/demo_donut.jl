@@ -13,7 +13,6 @@ n = Vec{3, Float64}(0.0,0.0,1.0)
 num_steps = 25
 close_loop = true
 
-
 F,V = revolvecurve(Vc; extent = (2*pi - (2*pi/num_steps)), direction = :negative, 
 n = n, num_steps = num_steps, periodicity = (true,true), face_type = :quad)
 

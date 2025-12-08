@@ -20,7 +20,8 @@ for testCase = 1:2
         F = tofaces(F)
         F,V,_,_ = mergevertices(F,V)
     elseif testCase == 2 # Quad mesh sphere
-        F,V = subquadsphere(4,100)
+        F,V = subquadsphere(4, 100)        
+        V .+= Point{3,Float64}(50.0, 50.0, 50.0)
     end
 
     V0 = deepcopy(V)
@@ -29,7 +30,7 @@ for testCase = 1:2
 
     # Set smoothing parameters
     tol = 1e-3
-    nMax = 15 # Maximum number of iterations
+    nMax = 25 # Maximum number of iterations
 
     λ = 0.5 # Laplacian smoothing parameter
 

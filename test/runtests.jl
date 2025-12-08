@@ -9219,6 +9219,89 @@ end
     @test isapprox(Σ, sort(diag(U), rev=true), atol=eps_level)
 end
 
+@testset "image2voxelmesh" verbose=true begin  
+    # Create image for a spherical distance  
+    nSteps = 11
+    w = 2.0
+    xr,yr,zr = ntuple(_->range(-w, w,nSteps),3)
+    I = [sqrt(x^2 + y^2 + z^2) for x in xr, y in yr, z in zr]    
+    d = 2.0
+    voxelSelection = [i<=d for i in I] # Bool array
+    
+    voxelSize = ((2.0*w)/(nSteps-1), (2.0*w)/(nSteps-1), (2.0*w)/(nSteps-1))
+    origin = Point{3,Float64}(-w, -w, -w)
+
+    meshType = :boundaryfaces
+    M, V, CM = image2voxelmesh(I, voxelSelection; meshType=meshType, voxelSize=voxelSize, origin=origin)
+    @test isa(M, Vector{QuadFace{Int64}})
+    @test isa(V, Vector{Point{3, Float64}})
+    @test isa(CM, Vector{eltype(I)})
+
+    meshType = :faces
+    M, V, CM = image2voxelmesh(I, voxelSelection; meshType=meshType, voxelSize=voxelSize, origin=origin)
+    @test isa(M, Vector{QuadFace{Int64}})
+
+    meshType = :elements
+    M, V, CM = image2voxelmesh(I, voxelSelection; meshType=meshType, voxelSize=voxelSize, origin=origin)
+    @test isa(M, Vector{Hex8{Int64}})
+end
+
+@testset "smoothmesh_taubin" verbose=true begin  
+    # Create image for a spherical distance  
+    nSteps = 11
+    w = 2.0
+    xr,yr,zr = ntuple(_->range(-w, w,nSteps),3)
+    I = [sqrt(x^2 + y^2 + z^2) for x in xr, y in yr, z in zr]    
+    d = 2.0
+    voxelSelection = [i<=d for i in I] # Bool array    
+    voxelSize = ((2.0*w)/(nSteps-1), (2.0*w)/(nSteps-1), (2.0*w)/(nSteps-1))
+    origin = Point{3,Float64}(-w, -w, -w)
+    meshType = :boundaryfaces
+    F, V, CM = image2voxelmesh(I, voxelSelection; meshType=meshType, voxelSize=voxelSize, origin=origin)
+
+    N = 3
+    λ = 0.631398
+    μ = -0.673952
+
+    Vn = smoothmesh_taubin(F, V, N, λ, μ)
+    @test isa(Vn, Vector{Point{3, Float64}})
+end
+
+@testset "inmesh" verbose=true begin 
+    r = 1.0 
+    F, V = geosphere(3, r) 
+    P_test = [Point{3, Float64}(  0.0, 0.0, 0.0),
+              Point{3, Float64}(r/2.0, 0.0, 0.0),
+              Point{3, Float64}(2.0*r, 0.0, 0.0), 
+              Point{3, Float64}(0.0, 2.0*r, 0.0), 
+              Point{3, Float64}(0.0, 0.0, 2.0*r)]
+
+    # Single point
+    b = inmesh(F,V, P_test[1], tolEps = eps(Float64), include_on=false)
+    @test b == true
+
+    # Vector of points
+    B = inmesh(F,V, P_test, tolEps = eps(Float64), include_on=false)
+    @test B == [true, true, false, false, false] 
+end
+
+@testset "mesh2bool" verbose=true begin 
+    F, V = geosphere(2, 15.0)
+    nSteps = 25
+    w = 16
+    xr,yr,zr = ntuple(_->range(-w, w,nSteps),3)
+    pointSpacing = pointspacingmean(F,V)
+    voxelSize = ((2.0*w)/(nSteps-1), (2.0*w)/(nSteps-1), (2.0*w)/(nSteps-1))
+    origin = Point{3,Float64}(-w, -w, -w)
+
+    B = mesh2bool(F, V, xr, yr, zr; tolEps = eps(Float64))
+    @test isa(B, Array{Bool, 3})
+    @test size(B) == (length(xr), length(yr), length(zr))
+    @test B[1,1,1] == false
+    m = round(Int, nSteps/2.0)
+    @test B[m,m,m] == true
+end
+
 # # UNCOMMENT TO RUN ALL DEMOS ------------------------------------------------
 # if get(ENV, "CI", "false") != "true"
 #     @testset "Demos" begin
