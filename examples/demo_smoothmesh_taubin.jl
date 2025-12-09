@@ -9,14 +9,14 @@ GLMakie.closeall()
 
 for testCase = 1:2
     if testCase == 1
-        nSteps = 25
+        nSteps = 15
         w = 2.0
         xr,yr,zr = ntuple(_->range(-w, w,nSteps),3)
         I = [sqrt(x^2 + y^2 + z^2) for x in xr, y in yr, z in zr]    
         d = 2.0
         voxelSelection = [i<=d for i in I] # Bool array
     elseif testCase == 2
-        nSteps = 75
+        nSteps = 50
         w = 4.77
         xr,yr,zr = ntuple(_->range(-w, w,nSteps),3)
         function thisImage(x,y,z)

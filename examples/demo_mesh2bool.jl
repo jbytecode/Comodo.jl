@@ -9,7 +9,7 @@ GLMakie.closeall()
 
 GLMakie.closeall()
 
-for testCase in 1:4
+for testCase in 1:5
     if testCase == 1
         F, V = geosphere(2, 15.0)
         nSteps = 25
@@ -19,6 +19,20 @@ for testCase in 1:4
         voxelSize = ((2.0*w)/(nSteps-1), (2.0*w)/(nSteps-1), (2.0*w)/(nSteps-1))
         origin = Point{3,Float64}(-w, -w, -w)
     elseif testCase == 2
+        r1 = 10.0
+        r2 = 5.0
+        F1, V1 = geosphere(2, r1) # Big sphere 
+        F2, V2 = geosphere(2, r2) # Small inner sphere 
+        invert_faces!(F2) # Invert inner 
+        F,V = joingeom(F1, V1, F2, V2)
+
+        nSteps = 25
+        w = r1+r1/10.0
+        xr,yr,zr = ntuple(_->range(0.0, w,nSteps),3)
+        pointSpacing = pointspacingmean(F,V)
+        voxelSize = (w/(nSteps-1), w/(nSteps-1), w/(nSteps-1))
+        origin = Point{3,Float64}(0.0, 0.0, 0.0)
+    elseif testCase == 3
         r = 1.0
         nc = 16
         t = range(2.0*π-(2.0*π/nc),0,nc)
@@ -38,7 +52,7 @@ for testCase in 1:4
         yr = minV[2]:voxelSize[1]:maxV[2]
         zr = minV[3]:voxelSize[3]:maxV[3] 
         origin = minV
-    elseif testCase == 3
+    elseif testCase == 4
         # Loading a mesh
         fileName_mesh = joinpath(comododir(),"assets","stl","stanford_bunny_low.stl")
         M = load(fileName_mesh)
@@ -56,7 +70,7 @@ for testCase in 1:4
         yr = minV[2]:voxelSize[1]:maxV[2]
         zr = minV[3]:voxelSize[3]:maxV[3] 
         origin = minV
-    elseif testCase == 4
+    elseif testCase == 5
         # Loading a mesh
         fileName_mesh = joinpath(comododir(),"assets","stl","stanford_bunny_low.stl")
         M = load(fileName_mesh)
@@ -79,7 +93,7 @@ for testCase in 1:4
         yr = minV[2]:voxelSize[1]:maxV[2]
         zr = minV[3]:voxelSize[3]:maxV[3] 
         origin = Point{3, Float64}(xr[1], yr[1], zr[1])
-    elseif testCase == 5
+    elseif testCase == 6
         # Loading a mesh
         fileName_mesh = joinpath(comododir(),"assets","stl","stanford_bunny_low.stl")
         M = load(fileName_mesh)

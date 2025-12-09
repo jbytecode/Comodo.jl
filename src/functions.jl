@@ -9542,7 +9542,7 @@ function image2voxelmesh(I::Array{TM, 3}, C::Vector{CartesianIndex{3}}; meshType
 end
 
 
-function smoothmesh_taubin(F::Vector{NgonFace{N,TF}}, V::Vector{Point{ND,TV}}, n=1, λ=0.631398, μ=-0.673952, con_V2V=nothing, constrained_points=nothing) where N where TF<:Integer where ND where TV<:Real
+function smoothmesh_taubin(F::Vector{NgonFace{N,TF}}, V::Vector{Point{ND,TV}}, n=1, λ=0.631398, μ=-0.673952; con_V2V=nothing, constrained_points=nothing) where N where TF<:Integer where ND where TV<:Real
     if λ>1.0 || λ<0.0
         throw(ArgumentError("λ should be in the range 0-1"))
     end
@@ -9552,11 +9552,6 @@ function smoothmesh_taubin(F::Vector{NgonFace{N,TF}}, V::Vector{Point{ND,TV}}, n
             return V
         elseif n>0
             indSmooth = elements2indices(F) # Indices of points involved in smoothing
-
-            if maximum(indSmooth)>length(V) || minimum(indSmooth)<1
-                throw(ErrorException("Out of range indices detected"))
-            end
-            
             # Compute vertex-vertex connectivity i.e. "Laplacian umbrellas" if nothing
             if isnothing(con_V2V)
                 E_uni = meshedges(F;unique_only=true)
@@ -9652,10 +9647,10 @@ function mesh2bool(F, V, xr, yr, zr; tolEps = eps(Float64))
                         end
                     end 
                     if D_i[1]<-tolEps
-                        B[i,j,1:i_T[1]] .= true
+                        B[i,j,1:i_T[1]] .= true                        
                     end
                     if D_i[end]>tolEps
-                        B[i,j,i_T[end]+1:end] .= true
+                        B[i,j,i_T[end]+1:end] .= true                        
                     end          
                 end
             end

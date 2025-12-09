@@ -8945,6 +8945,10 @@ end
     n = 3
     Fn, Vn = subtri_centre(F, V, n)
     @test length(Fn) == length(F)*3^n 
+
+    # Check 
+    Fn, Vn = subtri_centre(F, V, 0)
+    @test Fn == F
 end
 
 @testset "removethreeconnected" verbose=true begin    
@@ -9243,6 +9247,17 @@ end
     meshType = :elements
     M, V, CM = image2voxelmesh(I, voxelSelection; meshType=meshType, voxelSize=voxelSize, origin=origin)
     @test isa(M, Vector{Hex8{Int64}})
+
+    # Check behaviour for empty index set
+    voxelSelection = Vector{CartesianIndex{3}}()
+    meshType = :elements
+    M, V, CM = image2voxelmesh(I, voxelSelection; meshType=meshType, voxelSize=voxelSize, origin=origin)
+    @test isempty(M)
+    @test isempty(V)
+    @test isempty(CM)
+
+    # Check errors
+    @test_throws Exception M, V, CM = image2voxelmesh(I, voxelSelection; meshType=:wrong, voxelSize=voxelSize, origin=origin)
 end
 
 @testset "smoothmesh_taubin" verbose=true begin  
@@ -9264,41 +9279,107 @@ end
 
     Vn = smoothmesh_taubin(F, V, N, λ, μ)
     @test isa(Vn, Vector{Point{3, Float64}})
+
+    # Check behaviour when n=0    
+    Vn = smoothmesh_taubin(F, V, 0, λ, μ)
+    @test Vn == V
+
+
+    # Check behaviour for constrained smoothing 
+    constrained_points = findall([v[3]<0.0 for v in V])
+    Vn = smoothmesh_taubin(F, V, N, λ, μ; constrained_points = constrained_points)
+    @test Vn[constrained_points] == V[constrained_points]
+
+    # Check errors     
+    @test_throws Exception smoothmesh_taubin(F, V, -3, λ, μ) # Negative number of iterations
+    @test_throws Exception smoothmesh_taubin(F, V, N, 5.0, μ) # Lambda too high 
 end
 
 @testset "inmesh" verbose=true begin 
     r = 1.0 
     F, V = geosphere(3, r) 
-    P_test = [Point{3, Float64}(  0.0, 0.0, 0.0),
-              Point{3, Float64}(r/2.0, 0.0, 0.0),
-              Point{3, Float64}(2.0*r, 0.0, 0.0), 
-              Point{3, Float64}(0.0, 2.0*r, 0.0), 
-              Point{3, Float64}(0.0, 0.0, 2.0*r)]
+    P_test = [Point{3, Float64}(  0.0, 0.0, 0.0), # In
+              Point{3, Float64}(r/2.0, 0.0, 0.0), # In
+              Point{3, Float64}(2.0*r, 0.0, 0.0), # Out 
+              Point{3, Float64}(0.0, 2.0*r, 0.0), # Out
+              Point{3, Float64}(0.0, 0.0, 2.0*r), # Out
+              Point{3, Float64}(0.0, 0.0, r)] # On
+
 
     # Single point
     b = inmesh(F,V, P_test[1], tolEps = eps(Float64), include_on=false)
     @test b == true
 
-    # Vector of points
+    # Vector of points, include_on=false
     B = inmesh(F,V, P_test, tolEps = eps(Float64), include_on=false)
-    @test B == [true, true, false, false, false] 
+    @test B == [true, true, false, false, false, false] 
+
+    # Vector of points, include_on=true
+    B = inmesh(F,V, P_test, tolEps = eps(Float64), include_on=true)
+    @test B == [true, true, false, false, false, true] 
 end
 
 @testset "mesh2bool" verbose=true begin 
-    F, V = geosphere(2, 15.0)
-    nSteps = 25
-    w = 16
-    xr,yr,zr = ntuple(_->range(-w, w,nSteps),3)
-    pointSpacing = pointspacingmean(F,V)
-    voxelSize = ((2.0*w)/(nSteps-1), (2.0*w)/(nSteps-1), (2.0*w)/(nSteps-1))
-    origin = Point{3,Float64}(-w, -w, -w)
 
-    B = mesh2bool(F, V, xr, yr, zr; tolEps = eps(Float64))
-    @test isa(B, Array{Bool, 3})
-    @test size(B) == (length(xr), length(yr), length(zr))
-    @test B[1,1,1] == false
-    m = round(Int, nSteps/2.0)
-    @test B[m,m,m] == true
+    @testset "Object fully inside image" begin 
+        F, V = geosphere(2, 15.0)
+        nSteps = 25
+        w = 16
+        xr,yr,zr = ntuple(_->range(-w, w,nSteps),3)
+        pointSpacing = pointspacingmean(F,V)
+        voxelSize = ((2.0*w)/(nSteps-1), (2.0*w)/(nSteps-1), (2.0*w)/(nSteps-1))
+        
+        B = mesh2bool(F, V, xr, yr, zr; tolEps = eps(Float64))
+        @test isa(B, Array{Bool, 3})
+        @test size(B) == (length(xr), length(yr), length(zr))
+        @test B[1,1,1] == false
+        m = round(Int, nSteps/2.0)
+        @test B[m,m,m] == true
+    end
+
+    @testset "Object partially inside image, bottom" begin 
+        r1 = 10.0
+        r2 = 5.0
+        F1, V1 = geosphere(2, r1) # Big sphere 
+        F2, V2 = geosphere(2, r2) # Small inner sphere 
+        invert_faces!(F2) # Invert inner 
+        F,V = joingeom(F1, V1, F2, V2)
+
+        nSteps = 25
+        w = r1+r1/10.0
+        xr,yr,zr = ntuple(_->range(0.0, w,nSteps),3)
+        pointSpacing = pointspacingmean(F,V)
+        voxelSize = (w/(nSteps-1), w/(nSteps-1), w/(nSteps-1))
+        
+        B = mesh2bool(F, V, xr, yr, zr; tolEps = eps(Float64))
+        @test isa(B, Array{Bool, 3})
+        @test size(B) == (length(xr), length(yr), length(zr))
+        @test B[1,1,1] == false
+        m = round(Int, nSteps/2.0)
+        @test B[m,m,m] == true
+    end
+
+    @testset "Object partially inside image, top" begin 
+        r1 = 10.0
+        r2 = 5.0
+        F1, V1 = geosphere(2, r1) # Big sphere 
+        F2, V2 = geosphere(2, r2) # Small inner sphere 
+        invert_faces!(F2) # Invert inner 
+        F,V = joingeom(F1, V1, F2, V2)
+
+        nSteps = 25
+        w = r1+r1/10.0
+        xr,yr,zr = ntuple(_->range(-w, 0.0nSteps),3)
+        pointSpacing = pointspacingmean(F,V)
+        voxelSize = (w/(nSteps-1), w/(nSteps-1), w/(nSteps-1))
+        
+        B = mesh2bool(F, V, xr, yr, zr; tolEps = eps(Float64))
+        @test isa(B, Array{Bool, 3})
+        @test size(B) == (length(xr), length(yr), length(zr))
+        @test B[1,1,1] == false
+        m = round(Int, nSteps/2.0)
+        @test B[m,m,m] == false
+    end
 end
 
 # # UNCOMMENT TO RUN ALL DEMOS ------------------------------------------------
