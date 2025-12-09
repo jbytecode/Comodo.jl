@@ -2342,34 +2342,35 @@ function smoothmesh_laplacian(F::Vector{NgonFace{N,TF}},V::Vector{Point{ND,TV}},
             if !isnothing(constrained_points)
                 setdiff!(indSmooth, constrained_points)
             end
-
-            if maximum(indSmooth)>length(V) || minimum(indSmooth)<1
-                throw(ErrorException("Out of range indices detected"))
-            end
-            
-            # Compute vertex-vertex connectivity i.e. "Laplacian umbrellas" if nothing
-            if isnothing(con_V2V)
-                E_uni = meshedges(F;unique_only=true)
-                con_V2V = con_vertex_vertex(E_uni)
-            end        
-            c = 0
-            while c<n             
-                Vs = deepcopy(V)
-                @inbounds for i in indSmooth 
-                    Vs[i] = (1.0-λ).*V[i] .+ λ*mean(V[con_V2V[i]]) # Linear blend between original and pure Laplacian
-                end            
-                if !isnothing(tolDist) # Include tolerance based termination
-                    d = 0.0
-                    @inbounds for i in indSmooth
-                        d+=sqrt(sum((V[i].-Vs[i]).^2)) # Sum of distances
-                    end
-                    if d<tolDist # Sum of distance smaller than tolerance?
-                        break
-                    end            
+            if !isempty(indSmooth)
+                if maximum(indSmooth)>length(V) || minimum(indSmooth)<1
+                    throw(ErrorException("Out of range indices detected"))
                 end
-                c+=1 
-                V = Vs                
-            end            
+                
+                # Compute vertex-vertex connectivity i.e. "Laplacian umbrellas" if nothing
+                if isnothing(con_V2V)
+                    E_uni = meshedges(F;unique_only=true)
+                    con_V2V = con_vertex_vertex(E_uni)
+                end        
+                c = 0
+                while c<n             
+                    Vs = deepcopy(V)
+                    @inbounds for i in indSmooth 
+                        Vs[i] = (1.0-λ).*V[i] .+ λ*mean(V[con_V2V[i]]) # Linear blend between original and pure Laplacian
+                    end            
+                    if !isnothing(tolDist) # Include tolerance based termination
+                        d = 0.0
+                        @inbounds for i in indSmooth
+                            d+=sqrt(sum((V[i].-Vs[i]).^2)) # Sum of distances
+                        end
+                        if d<tolDist # Sum of distance smaller than tolerance?
+                            break
+                        end            
+                    end
+                    c+=1 
+                    V = Vs                
+                end 
+            end           
         else #n<0
             throw(ArgumentError("n should be greater or equal to 0"))
         end

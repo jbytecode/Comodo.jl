@@ -9067,7 +9067,6 @@ end
         @test isempty(Fq)
         @test Ft == F
     end
-
 end
 
 @testset "tri2quad_merge_split!" verbose=true begin    

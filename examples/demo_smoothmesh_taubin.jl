@@ -63,15 +63,20 @@ for testCase = 1:2
     println("f = ", f)
     println("f^N = ", fN)
 
-    V = smoothmesh_taubin(F, V, N, λ, μ)
+    Vn = smoothmesh_taubin(F, V, N, λ, μ)
 
     # Visualization
     Fs, Vs = separate_vertices(F,V)
+    _, Vns = separate_vertices(F,Vn)
+
     Cs = simplex2vertexdata(Fs,C)
 
     fig = Figure(size=(800,800))   
     ax1 = AxisGeom(fig[1,1]; limits=(-w-voxelSize[2],w+voxelSize[2],-w-voxelSize[1],w+voxelSize[1],-w-voxelSize[3],w+voxelSize[3]))
     hp1 = meshplot!(ax1, Fs, Vs, color=Cs, strokewidth=1.0, colormap=Reverse(:Spectral))
+
+    ax1 = AxisGeom(fig[1,2]; limits=(-w-voxelSize[2],w+voxelSize[2],-w-voxelSize[1],w+voxelSize[1],-w-voxelSize[3],w+voxelSize[3]))
+    hp1 = meshplot!(ax1, Fs, Vns, color=Cs, strokewidth=1.0, colormap=Reverse(:Spectral))
     # scatter!(ax1,V, markersize=10, color=:red)
     screen = display(GLMakie.Screen(), fig)
     GLMakie.set_title!(screen, "testCase = $testCase")
